@@ -1,10 +1,13 @@
-import InfoMon as im
+import InformationOnInstitutions as im #this allows to find specific types of institutions
+import DatabaseConnect  
+dc = DatabaseConnect.connect('Gamburigan.147' ,'womeninmilanphd') #this allows to connect to the database, and select the password, and database name
+
+#various imports for the graphs and relevant calculations
 import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as stats
-from Database_connecting import connecting as database 
 import geopandas as gpd
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.patches as mpatches
@@ -12,33 +15,52 @@ from shapely.geometry import Point
 from shapely.wkt import loads
 import datetime as yr
 
-directory = 'C:/Users/Olevam/OneDrive - University of Glasgow/PhD_WomenInMilan/Python/AllGraphsFinalThesis/CreatedGraphs'
-dc = database.connect('womeninmilanphd')
+
+#where the output of each function will go
+directoryToSaveGraphs = 'Data/CreatedGraphs'
+
+#complete list of institutions by gender 
 male = im.get_monasteires('m')
 female = im.get_monasteires('f')
 all = im.get_monasteires('a')
-maleFrame, femaleFrame, allFrame = im.anl_frame()
+
+#complete list of humiliati institutions
+humiliatiMen = im.humiliati('m')
+humiliatiWomen = im.humiliati('f')
+humiliatiAll = im.humiliati('a')
+
+#map of lombardy 
+lombardia = gpd.read_file("Data/MapsForCode/Regione_2020.shp").to_crs('EPSG:4326')
+
+#calls the frames with various data on various groups of institutions
+#this has all the institutions
+mainFrame = pd.read_excel('Data/MainFrame.xlsx')
+#only male institutions
+maleFrame = pd.read_excel('Data/MaleFrame.xlsx')
+#only female institutions
+femaleFrame = pd.read_excel('Data/FemaleFrame.xlsx')
+#top 10 male institutions, and top 10 female institutions, according to overall wealth. 
+top20Frame = pd.read_excel('Data/Top20FullData.xlsx')
+
+#these are lists of institutional names for the upcoming analysis
 allMale = maleFrame['Monastery']
 allFemale = femaleFrame['Monastery']
+top20 = top20Frame['Monastery']   
+top10Female = top20[top20.isin(female)] 
+top10Male = top20[top20.isin(male)]  
+
+#these find the top 10 and top 30 male and female institutions, according to the overall wealth
 maleprime = maleFrame.iloc[0:10]
 femaleprime =femaleFrame.iloc[0:10]
 top30male = maleFrame.iloc[0:30]
 top30female = femaleFrame.iloc[0:30]
 
-top20Frame = pd.read_excel('C:/Users/Olevam/OneDrive - University of Glasgow/PhD_WomenInMilan/Results/WealthData/Top20.xlsx')
-top20 = top20Frame['Monastery']   
-top10Female = top20[top20.isin(female)] 
-top10Male = top20[top20.isin(male)]  
-humiliatiMen = im.humiliati('m')
-humiliatiWomen = im.humiliati('f')
-humiliatiAll = im.humiliati('a')
-lombardia = gpd.read_file("F:/Python/Geopanda/REGIONE_LOMBARDIA/Regione_2020.shp").to_crs('EPSG:4326')
 
-
-
+# this graph shows the percentage of women acting in document for each decade between 1100 and 1299
 def firstGraph(numbertitle):
-    ## first graph -- percentage overtime
-    def Total_number_actor ():
+    # this function returns the number of overall actors for each relevant decade if gender is none
+    # otherwise it returns the number of female actors for each relevant decade 
+    def Total_number_actor (gender = None): 
         time_query = '''
                 SELECT COUNT(*), EXTRACT  (DECADE FROM year) as decade FROM actor 
                 JOIN alldocuments ON actor.docid = alldocuments.docid
@@ -46,40 +68,28 @@ def firstGraph(numbertitle):
                 WHERE type_instiution = '3'
                 AND year IS NOT NULL
             AND year BETWEEN '1100-01-01' AND '1299-01-01'
-                GROUP BY decade
         '''
         year_number = []
-        dc.execute(time_query)
-        for count, year in dc.fetchall():
-            year_number.append([count, int(year*10)])
-            year_number = sorted(year_number, key=lambda x:x[1])
-        return year_number
-
-    def Number_overall (gender):
-        time_query = '''
-                SELECT COUNT(*), EXTRACT  (DECADE FROM year) as decade FROM actor 
-                JOIN alldocuments ON actor.docid = alldocuments.docid
-                JOIN monastery ON monastery.monasteryid = actor.monastery
-                WHERE female = %s
-                AND type_instiution = '3'
-                AND year IS NOT NULL
-            AND year BETWEEN '1100-01-01' AND '1299-01-01'
-                GROUP BY decade
-        '''
-        year_number = []
-        dc.execute(time_query, [gender])
-        for count, year in dc.fetchall():
-            year_number.append([count, int(year*10)])
-            year_number = sorted(year_number, key=lambda x:x[1])
-        return year_number
-
-    def percentage_overtimne (total, female, title, numbertitle):
-        data_female = []
-        overall = total()   
-        for num, year in female('y'):
-            data_female.append(num)
-        frame = pd.DataFrame(overall, columns=['Number_male', 'Year'])
-        frame['Number_female'] = data_female
+        if gender == None:
+            time_query += 'GROUP BY decade ORDER BY decade'
+            dc.execute(time_query)
+            for count, year in dc.fetchall():
+                year_number.append([count, int(year*10)])
+                year_number = sorted(year_number, key=lambda x:x[1])
+            return year_number
+        else:
+            time_query += '''AND female = 'y' GROUP BY decade ORDER BY decade'''
+            dc.execute(time_query)
+            for count, year in dc.fetchall():
+                year_number.append(count)
+            return year_number
+       
+    #this function calculates the percentage of women per decade, and plots it.
+    def percentage_overtimne (title, numbertitle):
+        allactors = Total_number_actor()
+        femaleactors = Total_number_actor('f')
+        frame = pd.DataFrame(allactors, columns=['Number_male', 'Year'])
+        frame['Number_female'] = femaleactors
         frame['Percentage'] = frame['Number_female']/frame['Number_male']
         fig, ax = plt.subplots (figsize = (7, 7))
         ax.plot(frame['Year'], frame['Percentage'], label= 'Women')
@@ -87,15 +97,15 @@ def firstGraph(numbertitle):
         ax.set_xlabel('Years',size=12)
         plt.legend(fontsize=13)
         plt.title(title)
-        plt.savefig(f'{directory}/{numbertitle}.jpeg')
+        plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
         plt.close(fig)
-    percentage_overtimne(Total_number_actor, Number_overall, 'Percentage of female actors overtime', numbertitle)
+    percentage_overtimne('Percentage of female actors overtime', numbertitle)
 
 
-
-
+firstGraph(1)
+#This function plots the number of documents of men and women over each decade
 def secondGraph (numbertitle):
-    # second Graph Number of documents with men side by side documents with women 
+    #this function creates the figure
     def create_plot (ax, data, gender, label):
         year = []
         number = []
@@ -104,7 +114,7 @@ def secondGraph (numbertitle):
             number.append(num)
         figure = ax.plot(year, number, label = label)
         return(figure)
-
+    #this function counts the number of documents with men or women in each decade
     def nm_in_docs (gender):
         n_of_docs_q = ''' 
             SELECT COUNT(*), EXTRACT  (DECADE FROM year) as decade FROM alldocuments 
@@ -122,7 +132,7 @@ def secondGraph (numbertitle):
             year_number.append([count, int(year*10)])
             year_number = sorted(year_number, key=lambda x:x[1])
         return year_number
-
+    #this function creates a figure more men and for women, then sets various details. It takes the function for the data, the title and the number of the graph in relation to the thesis.
     def save_figs (data, title, numbertitle):
         fig, ax = plt.subplots(1,2,figsize= (7,7))
         create_plot(ax[0], data, 'n', label= 'Men')
@@ -135,12 +145,14 @@ def secondGraph (numbertitle):
         ax[1].set_xlabel('Years',size=12)
         ax[0].legend(fontsize=13)
         ax[1].legend(fontsize=13)
-        plt.savefig(f'{directory}/{numbertitle}.jpeg')
+        plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
         plt.close(fig)
     save_figs(nm_in_docs, 'Number of documents with',numbertitle)
 
+
+#This function plots the average denari obtain in a sale  for men and women over time
 def thirdGraph (numbertitle):
-    #Third Graph Average denari per person overtime
+    # the function counts the number of sales for male and female per decade
     def number_overtime (gen):
         number_overtime = '''
         SELECT COUNT (*), EXTRACT (DECADE from year) as decade FROM alldocuments 
@@ -156,7 +168,9 @@ def thirdGraph (numbertitle):
         for count, year in dc.fetchall():
             year_list.append([int(count), int(year)*10])
         return year_list
-
+    
+    # this function counts the denari spent in each document with a men and a woman for each decade. 
+    #It does so by obtaining the number of documents with men or women in a given decade, and then dividing the total denari transacted in a decade with men or women by the number of documents with men or women in that decade.
     def denari_overtime (gen):
         denari = '''
             SELECT SUM (price.price) FROM alldocuments 
@@ -175,8 +189,9 @@ def thirdGraph (numbertitle):
                 year_list.append([count, int(money), year])
         frame = pd.DataFrame(year_list, columns=['Number', 'Denari', 'Year'])
         frame['PerCapita']= round(frame['Denari']/frame['Number'], 2)
-        return(frame)
+        return frame
 
+    #this plots the figure calling the previous functuion for men and for women. It takes the number of the figure in relation to the thesis.
     def get_figure (numbertitle):
         male_frame = denari_overtime('n')
         female_frame = denari_overtime('y')
@@ -188,13 +203,13 @@ def thirdGraph (numbertitle):
         ax.set_xlabel('Years',size=12)
         title = 'Average denari transacted per sale per decade'
         plt.title(title)
-        plt.savefig(f'{directory}/{numbertitle}.jpeg')
+        plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
         plt.close(fig)
     get_figure(numbertitle)
 
+#this function plots the number of men identified as "sons" and those without identification over the period
 def fourthGraph(numbertitle):
-    #FourthGraph Number of sons and number of lone man 
-    genders = [['y', 'Female'], ['n', 'Male']]
+    #this function counts the number of documents with each classification
     def overtime (classification):
         query = '''
             SELECT COUNT (*),EXTRACT (DECADE FROM year) as decade FROM actor 
@@ -212,7 +227,7 @@ def fourthGraph(numbertitle):
             count.append(x)
             decade.append(y*10)
         return count, decade
-
+    #this function plots the figure, it takes the classifications, and the number of the figure in relation to the thesis.
     def plotGraph (classification, numbertitle):
         count, decade = overtime(classification[0])
         count2, decade2 = overtime(classification[1])
@@ -222,7 +237,7 @@ def fourthGraph(numbertitle):
         plt.ylabel('Number of documents')
         plt.xlabel('Years')
         plt.legend (fontsize = 13)
-        plt.savefig (f'{directory}/{numbertitle}.jpeg')
+        plt.savefig (f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
 
     plotGraph(['Son', 'Lone Man'], numbertitle)
 
@@ -254,7 +269,7 @@ def standard_plot (ax, column, frame, label):
     fig2 = ax.axvline(avg, color = fig1.get_facecolors(), label= f'Mean = {avg.round(2)}')
     return (fig1, fig2)
 
-def create_distributions(frameSet, graphType,numbertitle,dir=directory, type = 'Normal'):
+def create_distributions(frameSet, graphType,numbertitle,dir=directoryToSaveGraphs, type = 'Normal'):
     frame1 = sort_frame(graphType.column, frameSet.frame1)
     frame2 = sort_frame(graphType.column, frameSet.frame2)
     stat, pvalue = ttest_ind(graphType, frameSet)
@@ -329,7 +344,7 @@ def fourAvgStdDistr (data):
         results.append([avg.round(2), std, distribution])
     return results
 
-def sideBySidePlot (lists, stats, graphType,ttest, numbertitle, dir = directory):
+def sideBySidePlot (lists, stats, graphType,ttest, numbertitle, dir = directoryToSaveGraphs):
     colors = ['r', 'b', 'r', 'b']
     fig, axs = plt.subplots(1,2, figsize = (10,10))
     axs[0].scatter(lists[0], stats[0][2], label = 'Male institutions', color = colors[0])
@@ -482,7 +497,7 @@ def barGraph (mainData, compareData, title, numbertitle):
     handles, labels = ax.get_legend_handles_labels()
     handles.append(mpatches.Patch(color='none', label=f'P-value {pvalue.round(2)}'))
     ax.legend(handles=handles, fontsize=12)
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
 
@@ -530,7 +545,7 @@ def barSideBySide (dataSets, numbertitle):
             numberOfSubplotRow +=1
 
     fig.suptitle('Frequency of investitures, sales, disputes', fontsize = 15)
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
     
 
@@ -645,11 +660,11 @@ def createMembershiDistribution (dir, frames, label, numbertitle , column = 'Mem
     plt.close(fig)
 
 def twentyThirdGraph(numbertitle):
-    createMembershiDistribution(directory, [maleFrame, femaleFrame], 'All', numbertitle=numbertitle)
+    createMembershiDistribution(directoryToSaveGraphs, [maleFrame, femaleFrame], 'All', numbertitle=numbertitle)
 def twentyfourthGraph(numbertitle):
-    createMembershiDistribution(directory,[top30male, top30female] , 'Top Thirty',numbertitle=numbertitle)
+    createMembershiDistribution(directoryToSaveGraphs,[top30male, top30female] , 'Top Thirty',numbertitle=numbertitle)
 def twentyfiveGraph(numbertitle):
-    createMembershiDistribution(directory, [maleprime, femaleprime], 'Largest Wealth',numbertitle=numbertitle)
+    createMembershiDistribution(directoryToSaveGraphs, [maleprime, femaleprime], 'Largest Wealth',numbertitle=numbertitle)
 
 #RegressionMembership
 def twentysixthGraph(numbertitle):
@@ -662,7 +677,7 @@ def twentysixthGraph(numbertitle):
     ax.set_ylabel('Overall Wealth')
     plt.legend(fontsize='14')
     plt.title ('Comparison of wealth and membership of institutions')
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
 #RegressionAgentLeader
@@ -737,7 +752,7 @@ def regression_plot (first_list,second_list, title, numbertitle):
     ax.set_xlabel('Leader documents')
     plt.title(title)
     plt.legend(fontsize='14')
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
 
@@ -858,7 +873,7 @@ def multiRegressionTime (years, first_list, second_list, title, numbertitle ):
     ax.set_ylabel('Percentage of documents', fontsize=13)
     plt.title(title)
     plt.legend()
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close()
 
 def seventyfirstGraph(numbertitle):
@@ -1041,7 +1056,7 @@ def createDistanceDistributions(column, title, frames, labels, numbertitle):
     handles.append(mpatches.Patch(color='none', label=f'P-Value {pvalue.round(2)}'))
     ax.legend(handles=handles)
     plt.title(title)
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
 
@@ -1147,7 +1162,7 @@ def thirtyeigthGraph (numbertitle):
     titles = ['By the abbess','By the agents', 'Redaction of Monastero Maggiore parchments'] 
     leaderFrame = overall_redaction(('Monastero Maggiore',),female_leaders, 'Abbess')
     agentFrame = overall_redaction(('Monastero Maggiore',),femaleagent , 'Agents')
-    createMultiMap([leaderFrame, agentFrame], titles, directory, numbertitle=numbertitle)
+    createMultiMap([leaderFrame, agentFrame], titles, directoryToSaveGraphs, numbertitle=numbertitle)
 
 
 def thirtynineGraph(numbertitle):
@@ -1206,7 +1221,7 @@ def redaction_overtime (monastery, classfication, numbertitle):
             ax[l].axis('off')
             ax[l].annotate('Milan', xy=(9.19, 45.4642), size=25)
 
-        plt.savefig(f'{directory}/{numbertitle}.jpeg',bbox_inches='tight')
+        plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg',bbox_inches='tight')
         plt.close(fig)
 def fortyGraph(numbertitle):
     redaction_overtime(('Monastero Maggiore',), female_leaders, numbertitle)
@@ -1216,7 +1231,7 @@ def fortyoneGraph (numbertitle):
     titles = ['By the abbot','By the agents', 'Redaction of monastery Ambrogio parchments'] 
     leaderFrame = overall_redaction(('Ambrogio',),male_leaders, 'Male Leaders')
     agentFrame = overall_redaction(('Ambrogio',),maleagent , 'Agents')
-    createMultiMap([leaderFrame, agentFrame], titles, directory, numbertitle)
+    createMultiMap([leaderFrame, agentFrame], titles, directoryToSaveGraphs, numbertitle)
 
 def fortytwoGraph(numbertitle):
     classificationSet = [[male_leaders, 'Male Leaders'], [maleagent, 'Agents']]
@@ -1309,7 +1324,7 @@ def BarGraphPlot (list, monastery, func, title, numbertitle):
     ax.set_ylabel ('Parchment  Count', size=15)
     plt.title(title, size=15)
     plt.xticks(middle_x_point, doctypes, size=10)
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
 def fortyfiveGraph(numbertitle):
@@ -1603,7 +1618,7 @@ def createDisputeDistributions(column, title, frames, labels, numbertitle):
     handles.append(mpatches.Patch(color='none', label=f'P-Value {pvalue.round(2)}'))
     ax.legend(handles=handles)
     plt.title(title)
-    plt.savefig(f'{directory}/{numbertitle}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
 
@@ -1730,7 +1745,7 @@ def sixtythreeGraph(numbertitle):
     titles = ['By the abbess','By the agents', 'Redaction of Monastero Maggiore disputes'] 
     leaderFrame = doctype_data('Sentence',('Monastero Maggiore',),female_leaders, 'Abbess')
     agentFrame = doctype_data( 'Sentence',('Monastero Maggiore',),femaleagent , 'Agents')
-    createMultiMap([leaderFrame, agentFrame], titles, directory,numbertitle)
+    createMultiMap([leaderFrame, agentFrame], titles, directoryToSaveGraphs,numbertitle)
 
 def sixtyfourGraph(numbertitle):
     classificationSet = [[female_leaders, 'Abbesses'], [femaleagent, 'Agents for nunneries']]
@@ -1820,13 +1835,13 @@ def year_data (list):
         number.append(num)
     return year, number
 
-def create_plot (mask, list, title, directory):
+def create_plot (mask, list, title, directoryToSaveGraphs):
     fig, ax = plt.subplots(figsize= (7,7))
     year, number = year_data(list) 
     ax.plot(year, number, label=mask)
     plt.title(title)
     plt.legend()
-    plt.savefig(f'{directory}/{title}.jpeg')
+    plt.savefig(f'{directoryToSaveGraphs}/{title}.jpeg')
     plt.close(fig)
 
 def graph_per_leader (list, data, mon, numbertitle):   
@@ -1840,7 +1855,7 @@ def graph_per_leader (list, data, mon, numbertitle):
             title = f'Document per year under {name}'
             plt.title(title)
             plt.legend()
-            plt.savefig(f'{directory}/{numbertitle}.jpeg')
+            plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
             plt.close(fig)
             
 def sixtynineGraph(numbertitle):
