@@ -88,9 +88,8 @@ def firstGraph(numbertitle):
     def percentage_overtimne (title, numbertitle):
         allactors = Total_number_actor()
         femaleactors = Total_number_actor('f')
-        frame = pd.DataFrame(allactors, columns=['Number_male', 'Year'])
-        frame['Number_female'] = femaleactors
-        frame['Percentage'] = frame['Number_female']/frame['Number_male']
+        frame = pd.DataFrame({'Year': [x[1] for x in allactors], 'Number_all': [x[0] for x in allactors],'Number_female': [x[0] for x in femaleactors]})
+        frame['Percentage'] = frame['Number_female']/frame['Number_all']
         fig, ax = plt.subplots (figsize = (7, 7))
         ax.plot(frame['Year'], frame['Percentage'], label= 'Women')
         ax.set_ylabel('Percentage', size=12)
@@ -101,8 +100,6 @@ def firstGraph(numbertitle):
         plt.close(fig)
     percentage_overtimne('Percentage of female actors overtime', numbertitle)
 
-
-firstGraph(1)
 #This function plots the number of documents of men and women over each decade
 def secondGraph (numbertitle):
     #this function creates the figure
@@ -113,7 +110,7 @@ def secondGraph (numbertitle):
             year.append(ye)
             number.append(num)
         figure = ax.plot(year, number, label = label)
-        return(figure)
+        return figure
     #this function counts the number of documents with men or women in each decade
     def nm_in_docs (gender):
         n_of_docs_q = ''' 
@@ -242,17 +239,20 @@ def fourthGraph(numbertitle):
     plotGraph(['Son', 'Lone Man'], numbertitle)
 
 ### here is general code for all the standard deviation stuff
+# this function sorts the frames with data (obtained from the imported xlsx) according to whatever variable is being tested and plotted.
+# It is necessary to do so if the distribution graph is not a scatter plot, otherwise the points in the distriubtion will not be linked in order
 def sort_frame(col, frame):
     if col !='Concentration':
         frame.sort_values(by=col, ascending= False, inplace=True)
     else:  
         frame.sort_values(by='Overall_wealth', ascending= False, inplace=True)
     return frame
+#this function calculates the mean and standard deviation of a given sample
 def mean_std (sample):
     average = sample.mean()
     standard = np.std(sample)
     return average, standard
-
+#this function calculates the t-test for the two samples given. It takes the graphType (the variable being tested), the frames (the two samples) and whether the samples include all ten institutions, or it excludes the top two
 def ttest_ind (graphType, frames, type = 'Normal'):
     frame1 = sort_frame(graphType.column, frames.frame1)
     frame2 = sort_frame(graphType.column, frames.frame2)
@@ -260,7 +260,8 @@ def ttest_ind (graphType, frames, type = 'Normal'):
         frame1 = frame1.iloc[2:10]
         frame2 = frame2.iloc[2:10]
     return stats.ttest_ind(frame1[graphType.column],frame2[graphType.column], equal_var=False)
-
+#this function plots the distribution curve of the variable being tested, it takes the axis and the column of the variable being tested, the frames (the two samples) and the labels of the samples.
+#this function is used in most of the graphs below
 def standard_plot (ax, column, frame, label):
     avg, std = mean_std(frame[column])
     ordered_list = frame[column]
@@ -269,6 +270,9 @@ def standard_plot (ax, column, frame, label):
     fig2 = ax.axvline(avg, color = fig1.get_facecolors(), label= f'Mean = {avg.round(2)}')
     return (fig1, fig2)
 
+#this function takes the frames (the two samples) and the labels of the samples, the graphType (the variable being tested), the number of the figure in relation to the thesis, and the type of distribution (normal or of 3rd to 10th)
+#employing the standard_plot function, this function creates the figures, and adds the relevant details.
+#this function is the bedrock of most of the graphs 
 def create_distributions(frameSet, graphType,numbertitle,dir=directoryToSaveGraphs, type = 'Normal'):
     frame1 = sort_frame(graphType.column, frameSet.frame1)
     frame2 = sort_frame(graphType.column, frameSet.frame2)
@@ -286,13 +290,13 @@ def create_distributions(frameSet, graphType,numbertitle,dir=directoryToSaveGrap
     ax.legend(handles=handles)
     plt.savefig(f'{dir}/{numbertitle}.jpeg', bbox_inches='tight')
     plt.close(fig)
-
+#this class provides information on to the type of graph being done by specifying a column, which will be used in the frameSet class below to select a sampel, and specifies the label to be used, and the title of the graph 
 class typeOfGraph ():
     def __init__(self,column, label, title ) -> None:
         self.column = column
         self.label = label
         self.title = title
-
+#this class gathers the relevant frames. The male frame (frame 1) and the female frame (frame2), the labels for each frame. The type allows to print the relevant title in a graph.
 class frameSet ():
     def __init__(self, frame1, frame2, label1, label2, type) -> None:
         self.frame1 = frame1
@@ -310,19 +314,34 @@ locationDistribution = typeOfGraph('Loc_number', 'land invested', 'Locations Inv
 denariDistribution = typeOfGraph('Denari_spent', 'denari spent', 'DenariSpent')
 networkDistribution = typeOfGraph('Independent_list', 'network size', 'Network')
 overallDistribution = typeOfGraph('Overall_wealth', 'overall wealth', 'Overallwealth')
-## single distributiongraphs
+
+
+# single distributiongraphs
+#this graph represents the  distribution of wealth for all institutions
 def fifthGraph (numbertitle):
     create_distributions(allFrame, overallDistribution, numbertitle)
+
+#this graph represents the distribution of wealth for the top ten institutions
 def sixthGraph (numbertitle):
     create_distributions(topTenFrame, overallDistribution,numbertitle)
+
+
+#this graph represents the distribution of wealth for the top ten institutions, excluding the outliers
 def seventhGraph (numbertitle):
     create_distributions(removeOutliersFrame, overallDistribution, numbertitle = numbertitle, type= '')
+
+#this graphs represents the distribution of denari spent by th etop ten institutions 
 def eigthGraph (numbertitle):
     create_distributions(topTenFrame, denariDistribution,numbertitle)
+
+
+#this graphs represents the distribution of denari spent by th etop ten institutions, excluding the outliers
 def ninthGraph (numbertitle):
     create_distributions(removeOutliersFrame, denariDistribution,numbertitle = numbertitle, type= '')
 
-##side by side graphs
+#side by side graphs
+#this fucntion provides four lists of the variable being tested. The first two are from male and female top ten institutions, the last two are from male and female top ten institutions, excluding the outliers.
+#the other two lists are the p-values for the samples to put in graphs
 def returnFourListsFromFrames (frameSet, graphType):
     maleFrame = sort_frame(graphType.column, frameSet.frame1)
     maleMainList = maleFrame[graphType.column]
@@ -336,6 +355,7 @@ def returnFourListsFromFrames (frameSet, graphType):
     ttest, pvalue2 = ttest_ind(graphType, removeOutliersFrame)
     return [maleMainList, femaleMainList, maleSecondList, femaleSecondList], [pvalue1, pvalue2]
 
+#this function takes the four lists of the variable being tested returns the average and standard deviation of the each list.
 def fourAvgStdDistr (data):
     results = []
     for x in data:
@@ -344,6 +364,9 @@ def fourAvgStdDistr (data):
         results.append([avg.round(2), std, distribution])
     return results
 
+#this function takes the four lists of the variable being tested, the stats of the lists, the type of graph, the t-test and the number of the figure in relation to the thesis
+#the information about the lists, the stats, and the ttest all originate from the returnFourListsFromFrames function
+#the function plots two side by side graphs with the relevant distributions and values in the legends
 def sideBySidePlot (lists, stats, graphType,ttest, numbertitle, dir = directoryToSaveGraphs):
     colors = ['r', 'b', 'r', 'b']
     fig, axs = plt.subplots(1,2, figsize = (10,10))
@@ -376,15 +399,19 @@ def sideBySidePlot (lists, stats, graphType,ttest, numbertitle, dir = directoryT
     plt.savefig(f'{dir}/{numbertitle}.jpeg', bbox_inches='tight')
     plt.close(fig)
     
-
+#this graph has two side by side graphs, one for the top ten institutions, and one for the top ten institutions, excluding the outliers, demonstrating the distribution of number of location invested.
 def tenthGraph (numbertitle):
     list, ttest = returnFourListsFromFrames(topTenFrame, locationDistribution)
     sideBySidePlot(list, fourAvgStdDistr(list), locationDistribution,ttest,numbertitle)
+
+#this graph has two side by side graphs, one for the top ten institutions, and one for the top ten institutions, excluding the outliers, demonstrating the distribution of network size
 def eleventhGraph(numbertitle):
     list, ttest = returnFourListsFromFrames(topTenFrame, networkDistribution)
     sideBySidePlot(list, fourAvgStdDistr(list), networkDistribution,ttest, numbertitle)
-#economicFrequency
+
+# the upcoming set of functions regards the discussion on market engagement
 doctypeList = ['Investiture', 'Sale', 'Sentence']
+#This function takes a list of institutions, and provides the overall number of documents of each type, and the percentage of documents of each type from the total
 def getPercentageDoctype (listmon):
     queryDoctype = '''
         SELECT COUNT(*) FROM alldocuments
@@ -393,30 +420,18 @@ def getPercentageDoctype (listmon):
     JOIN actor ON actor.docid = alldocuments.docid 
     JOIN classification ON classification.classid = actor.classification
     JOIN monastery ON monastery.monasteryid = actor.monastery
-    WHERE monastery.monasteryname = %s)
+    WHERE monastery.monasteryname IN %s)
     AND doctype.translation = %s
     '''
-    alldocs = '''
-        SELECT COUNT(*) FROM alldocuments
-    WHERE docid IN (SELECT DISTINCT alldocuments.docid FROM alldocuments
-    JOIN actor ON actor.docid = alldocuments.docid 
-    JOIN classification ON classification.classid = actor.classification
-    JOIN monastery ON monastery.monasteryid = actor.monastery
-    WHERE monastery.monasteryname = %s)
-    '''
-
     numberDoctypes = {}
-    totaldocs = 0
-
     for doc in doctypeList:
-        typenumber = 0
-        for mon in listmon:
-            dc.execute(queryDoctype, [mon, doc])
-            typenumber += dc.fetchall()[0][0]
-        numberDoctypes[doc] = typenumber
+        dc.execute(queryDoctype, [listmon, doc])
+        numberDoctypes[doc] = dc.fetchall()[0][0]
     frame =pd.DataFrame.from_dict(numberDoctypes, 'index',  columns= ['Percentage'])
     frame['Percentage'] = frame['Percentage']/frame['Percentage'].sum()
     return frame
+
+#this function takes a monastery name, and provides the number of documents for each type for that monastery
 def singleMonData (mon):
     queryDoctype = '''
         SELECT COUNT(*) FROM alldocuments
@@ -428,14 +443,7 @@ def singleMonData (mon):
     WHERE monastery.monasteryname = %s)
     AND doctype.translation = %s
     '''
-    alldocs = '''
-        SELECT COUNT(*) FROM alldocuments
-    WHERE docid IN (SELECT DISTINCT alldocuments.docid FROM alldocuments
-    JOIN actor ON actor.docid = alldocuments.docid 
-    JOIN classification ON classification.classid = actor.classification
-    JOIN monastery ON monastery.monasteryid = actor.monastery
-    WHERE monastery.monasteryname = %s)
-    '''
+
     numberDoctypes = {}
     for doc in doctypeList:
         dc.execute(queryDoctype, [mon, doc])
@@ -443,6 +451,7 @@ def singleMonData (mon):
         numberDoctypes[doc] = typenumber
     return pd.DataFrame.from_dict(numberDoctypes, 'index', columns= ['Percentage'])
 
+#this function takes a list of monasteries, and provides the number of documents for each type for the list of monasteries. This function is exacetly the same as the one above so why the heck do I have it twice 
 def multipleMonData (list):
     queryDoctype = '''
         SELECT COUNT(*) FROM alldocuments
@@ -453,14 +462,6 @@ def multipleMonData (list):
     JOIN monastery ON monastery.monasteryid = actor.monastery
     WHERE monastery.monasteryname IN %s)
     AND doctype.translation = %s
-    '''
-    alldocs = '''
-        SELECT COUNT(*) FROM alldocuments
-    WHERE docid IN (SELECT DISTINCT alldocuments.docid FROM alldocuments
-    JOIN actor ON actor.docid = alldocuments.docid 
-    JOIN classification ON classification.classid = actor.classification
-    JOIN monastery ON monastery.monasteryid = actor.monastery
-    WHERE monastery.monasteryname IN %s)
     '''
     numberDoctypes = {}
     for doc in doctypeList:
@@ -552,8 +553,8 @@ def barSideBySide (dataSets, numbertitle):
 
 def twelfthGraph(numbertitle):
     title = 'Ospedale del Broletto Milano'
-    barGraph(getPercentageDoctype(top20), singleMonData('OspedaleBroletoMilano'), title, numbertitle)
-
+    barGraph(getPercentageDoctype(tuple(top20)), singleMonData('OspedaleBroletoMilano'), title, numbertitle)
+twelfthGraph(12)
 def thirteenthGraph (numbertitle):
     mainSet = []
     for institutions in ['Monastero Maggiore', 'CanonicaAmbrogio']:
