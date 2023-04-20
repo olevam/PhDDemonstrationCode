@@ -411,7 +411,8 @@ def eleventhGraph(numbertitle):
 
 # the upcoming set of functions regards the discussion on market engagement
 doctypeList = ['Investiture', 'Sale', 'Sentence']
-#This function takes a list of institutions, and provides the overall number of documents of each type, and the percentage of documents of each type from the total
+#This function takes a list of institutions, and provides the overall number of documents of each type, and the percentage of documents of each type from the total. 
+#The function loops through each monastery because in some documents two monasteries act against or with each other, and if I don't add the number of documents from each monastery, I get a wrong actual result. 
 def getPercentageDoctype (listmon):
     queryDoctype = '''
         SELECT COUNT(*) FROM alldocuments
@@ -420,15 +421,18 @@ def getPercentageDoctype (listmon):
     JOIN actor ON actor.docid = alldocuments.docid 
     JOIN classification ON classification.classid = actor.classification
     JOIN monastery ON monastery.monasteryid = actor.monastery
-    WHERE monastery.monasteryname IN %s)
+    WHERE monastery.monasteryname = %s)
     AND doctype.translation = %s
     '''
     numberDoctypes = {}
     for doc in doctypeList:
-        dc.execute(queryDoctype, [listmon, doc])
-        numberDoctypes[doc] = dc.fetchall()[0][0]
-    frame =pd.DataFrame.from_dict(numberDoctypes, 'index',  columns= ['Percentage'])
-    frame['Percentage'] = frame['Percentage']/frame['Percentage'].sum()
+        typenumber = 0
+        for mon in listmon:
+            dc.execute(queryDoctype, [mon, doc])
+            typenumber += dc.fetchall()[0][0]
+        numberDoctypes[doc] = typenumber
+    frame =pd.DataFrame.from_dict(numberDoctypes, 'index',  columns= ['ActualValues'])
+    frame['Percentage'] = frame['ActualValues']/frame['ActualValues'].sum()
     return frame
 
 #this function takes a monastery name, and provides the number of documents for each type for that monastery
@@ -449,34 +453,14 @@ def singleMonData (mon):
         dc.execute(queryDoctype, [mon, doc])
         typenumber = dc.fetchall()[0][0]
         numberDoctypes[doc] = typenumber
-    return pd.DataFrame.from_dict(numberDoctypes, 'index', columns= ['Percentage'])
+    return pd.DataFrame.from_dict(numberDoctypes, 'index', columns= ['ActualValues'])
 
-#this function takes a list of monasteries, and provides the number of documents for each type for the list of monasteries. This function is exacetly the same as the one above so why the heck do I have it twice 
-def multipleMonData (list):
-    queryDoctype = '''
-        SELECT COUNT(*) FROM alldocuments
-    JOIN doctype ON alldocuments.doctype = doctype.id
-    WHERE docid IN (SELECT DISTINCT alldocuments.docid FROM alldocuments
-    JOIN actor ON actor.docid = alldocuments.docid 
-    JOIN classification ON classification.classid = actor.classification
-    JOIN monastery ON monastery.monasteryid = actor.monastery
-    WHERE monastery.monasteryname IN %s)
-    AND doctype.translation = %s
-    '''
-    numberDoctypes = {}
-    for doc in doctypeList:
-        dc.execute(queryDoctype, [tuple(list), doc])
-        typenumber = dc.fetchall()[0][0]
-        numberDoctypes[doc] = typenumber
-    
-    return pd.DataFrame.from_dict(numberDoctypes, 'index', columns= ['Percentage'])
-
-
+# this function is used to get the CHI square result and the P value
 def chiSquare (mainData, compareData):
-    excepted = mainData['Percentage']*compareData['Percentage'].sum()
-    return stats.chisquare(compareData['Percentage'], excepted)
+    excepted = mainData['Percentage']*compareData['ActualValues'].sum()
+    return stats.chisquare(compareData['ActualValues'], excepted)
 
-
+# this function retunrs a frame of chi square results for figures with multiple subplots
 def chiSquareFrame (mainData, list):
     dictOfChi = {}
     for mon in list: 
@@ -484,11 +468,11 @@ def chiSquareFrame (mainData, list):
         dictOfChi[mon] = [stat, round(pValue, 4)]
     frame = pd.DataFrame.from_dict(dictOfChi, 'Index', columns= [['xSquareStat', 'PValue']])
     return frame
-
+#this fucntion plot a single graph, with the expected frequency and the actual frequency, and does all the relevant modification
 def barGraph (mainData, compareData, title, numbertitle):
     chivalue, pvalue = chiSquare(mainData, compareData)
-    excepted = mainData['Percentage']*compareData['Percentage'].sum()
-    actual = compareData['Percentage']
+    excepted = mainData['Percentage']*compareData['ActualValues'].sum()
+    actual = compareData['ActualValues']
     fig, ax = plt.subplots(figsize = (12,12))
     ax.plot(doctypeList,excepted, marker = 'o', label = 'Expected Results')
     ax.plot(doctypeList,actual, marker = 'v', label = 'Actual Results')
@@ -501,15 +485,16 @@ def barGraph (mainData, compareData, title, numbertitle):
     plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
-
+#this function sets the data for multiple graphs
 def graphForSideBySide (mainData, compareData):
     chivalue, pvalue = chiSquare(mainData, compareData)
-    excepted = mainData['Percentage']*compareData['Percentage'].sum()
-    actual = compareData['Percentage']
+    excepted = mainData['Percentage']*compareData['ActualValues'].sum()
+    actual = compareData['ActualValues']
     return excepted, actual, pvalue
 
+#this function plots multiple graphs. It assumes no more than four suplots. 
 def barSideBySide (dataSets, numbertitle):
-    
+    #this first part sets out the proper number of rows and columns
     numberOfGraphs = len(dataSets)
     even = False
     if (numberOfGraphs%2)== 0:
@@ -519,19 +504,16 @@ def barSideBySide (dataSets, numbertitle):
     else:
         numberOfColumns = numberOfGraphs
         numberOfRows = 1
-
+    #this plots the graph with all the relevant details
     fig, axs = plt.subplots(numberOfRows,numberOfColumns, figsize = (12,12))
     numberOfSubplotColumn = 0
     numberOfSubplotRow = 0
-    
-    
     for data, title in dataSets:
         if even==False or numberOfGraphs == 2:
             locationMatrix = numberOfSubplotColumn
         else:
             locationMatrix = numberOfSubplotRow, numberOfSubplotColumn
         expected, actual, pvalue = data
-        
         axs[locationMatrix].plot(doctypeList,expected,  marker = 'o', label = 'Expected Results')
         axs[locationMatrix].plot(doctypeList,actual,  marker = '*', label = 'Actual Results')
         axs[locationMatrix].set_title(title, fontsize = 14)
@@ -544,75 +526,84 @@ def barSideBySide (dataSets, numbertitle):
         if numberOfSubplotColumn == 2 and even == True:
             numberOfSubplotColumn -=2
             numberOfSubplotRow +=1
-
     fig.suptitle('Frequency of investitures, sales, disputes', fontsize = 15)
     plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
     
 
-
+#market engagement of the Ospedale del Broletto
 def twelfthGraph(numbertitle):
     title = 'Ospedale del Broletto Milano'
-    barGraph(getPercentageDoctype(tuple(top20)), singleMonData('OspedaleBroletoMilano'), title, numbertitle)
-twelfthGraph(12)
+    barGraph(getPercentageDoctype(top20), singleMonData('OspedaleBroletoMilano'), title, numbertitle)
+# market engagement of both the Monastero Maggiore and the Canonry of Sant'Ambrogio
 def thirteenthGraph (numbertitle):
     mainSet = []
     for institutions in ['Monastero Maggiore', 'CanonicaAmbrogio']:
         mainSet.append([graphForSideBySide(getPercentageDoctype(top20), singleMonData(institutions)), institutions])
     barSideBySide(mainSet, numbertitle)
-
+# market engagement of both Maria d'Aurona and Margherita
 def fourteenthGraph (numbertitle):
     mainSet = []
     for institutions in ['MariaAurona', 'Margherita']:
         mainSet.append([graphForSideBySide(getPercentageDoctype(top20), singleMonData(institutions)), institutions])
     barSideBySide(mainSet, numbertitle)
 
-
+# market engagemnt of Agnese, San Felice, Sant'Ambrogio of Rivolta and the Cappucine of Concorezzo
 def fifteenthGraph (numbertitle):
     mainSet = []
     for institutions in ['Agnese', 'SanFelice', 'AmbrogioRivalta', 'CappucineConcorezzo']:
         mainSet.append([graphForSideBySide(getPercentageDoctype(top20), singleMonData(institutions)), institutions])
     barSideBySide(mainSet, numbertitle)
 
+# market engagemnt of Sant'Apollinare
 def sixteenthGraph(numbertitle):
     title = 'Santa Apollinare'
     barGraph(getPercentageDoctype(top20), singleMonData('Apollinare'),title ,numbertitle =numbertitle)
 
+# Market engagement of Santa Radengonda
 def seventeenthGraph(numbertitle):
     title = 'Santa Radegonda'
     barGraph(getPercentageDoctype(top20), singleMonData('Radegonda'),title ,numbertitle=numbertitle)
 
+#Market engagement of the monastery of Sant'Ambrogio, San Lorenzo, San Simpliciano, and the minor chapter of the cathedral
 def eighteenthGraph (numbertitle):
     mainSet = []
     for institutions in ['Ambrogio', 'Lorenzo', 'Simpliciano', 'DecumaniMilanesi']:
         mainSet.append([graphForSideBySide(getPercentageDoctype(top20), singleMonData(institutions)), institutions])
     barSideBySide(mainSet, numbertitle)
 
+#market engagement of San Giorgio al Palazzo, the Osepdale, and the Major chapter of the cathedral
 def nineteenthGraph (numbertitle):
     mainSet = []
     for institutions in ['Giorgio_Palazzo', 'OspedaleBroletoMilano', 'MilanArchdioces']:
         mainSet.append([graphForSideBySide(getPercentageDoctype(top20), singleMonData(institutions)), institutions])
     barSideBySide(mainSet, numbertitle)
 
+#Market engagement of Santa Maria da Chiaravalle and Santa Maria d'Aurona
 def twentiethGraph (numbertitle):
     mainSet = []
     for institutions in ['Chiaravalle', 'MariaDelMonte']:
         mainSet.append([graphForSideBySide(getPercentageDoctype(top20), singleMonData(institutions)), institutions])
     barSideBySide(mainSet, numbertitle)
 
+#market engagemnt of all Female institutions and all Male institutions
 def twentyFirtstGraph (numbertitle):
     groupSets = []
     for group, name in [[top10Female, 'Female institutions'], [top10Male, 'Male institutions']]:
-        groupSets.append([graphForSideBySide(getPercentageDoctype(top20), multipleMonData(group)), name])
+        groupSets.append([graphForSideBySide(getPercentageDoctype(top20), getPercentageDoctype(group)), name])
     barSideBySide(groupSets, numbertitle)
-    
+
+#market engagement of all humiliati male and female houses
+twentyFirtstGraph(21)
 def twentySecondGraph(numbertitle):
     groupSets = []
     for group, name in [[humiliatiMen, 'Humiliati Men'], [humiliatiWomen, 'Humiliati Women']]:
-        groupSets.append([graphForSideBySide(getPercentageDoctype(humiliatiAll), multipleMonData(group)), name])
+        groupSets.append([graphForSideBySide(getPercentageDoctype(humiliatiAll), getPercentageDoctype(group)), name])
     barSideBySide(groupSets, numbertitle)
 
-#MembershipGraphs
+#End of market engagement 
+#This section looks at number of members
+#This function returns the number of actors acting for an institutions in a single document, dividing it by years. It allows to see the one document with most actors and when it happened
 def countDate (classification, insti):
     query = '''
         SELECT COUNT (*), EXTRACT (year from year) as year, alldocuments.docid, alldocuments.docnumber FROM alldocuments
@@ -634,7 +625,8 @@ def countDate (classification, insti):
         docid.append(doc)
         docnumber.append(number)
     return count, date, docid, docnumber
- 
+
+#This selects the document with most actors
 def createFrame (monasteries, actor):
     list = []
     for mon in monasteries:
@@ -646,6 +638,7 @@ def createFrame (monasteries, actor):
     frame = pd.DataFrame(list, columns= ['Count', 'Date', 'Docid', 'Docnumber','Name'])
     return frame.sort_values('Count', ascending=False)
 
+#this function creates a ditribution of members, using the Standard_plot function
 def createMembershiDistribution (dir, frames, label, numbertitle , column = 'Membership'):  
     ttest, pvalue = stats.ttest_ind(frames[0][column],frames[1][column], equal_var=False)
     fig, ax = plt.subplots(figsize = (7,7))
@@ -660,14 +653,17 @@ def createMembershiDistribution (dir, frames, label, numbertitle , column = 'Mem
     plt.savefig(f'{dir}/{numbertitle}.jpeg', bbox_inches='tight')
     plt.close(fig)
 
+#membership distrubtion for all institutions
 def twentyThirdGraph(numbertitle):
     createMembershiDistribution(directoryToSaveGraphs, [maleFrame, femaleFrame], 'All', numbertitle=numbertitle)
+#membership distribution for top 30 male and female institutions
 def twentyfourthGraph(numbertitle):
     createMembershiDistribution(directoryToSaveGraphs,[top30male, top30female] , 'Top Thirty',numbertitle=numbertitle)
+#membership distribution for top 10 male and female institutions
 def twentyfiveGraph(numbertitle):
     createMembershiDistribution(directoryToSaveGraphs, [maleprime, femaleprime], 'Largest Wealth',numbertitle=numbertitle)
 
-#RegressionMembership
+#graph which plots a regression between membership and wealth 
 def twentysixthGraph(numbertitle):
     togetherFrame = pd.concat([maleprime, femaleprime])
     togetherData = stats.linregress(togetherFrame['Membership'], togetherFrame['Overall_wealth'])
@@ -681,7 +677,8 @@ def twentysixthGraph(numbertitle):
     plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
-#RegressionAgentLeader
+#End of chapter two graphs, the following graphs regard chapter 3 
+#these lists represent the actors which are used in the following grpahs
 male_leaders = ('Abbott', 'Preposto', 'Archpriest', 'Archbishop')
 female_leaders = ('Abbess',)
 male_clergy = ('Clergymen',)
@@ -692,6 +689,7 @@ femaleagent = ('Intermediary', 'Laybrother', 'Nun')
 male_actors =   [[male_leaders, 'Male Leaders'], [maleagent, 'Agents']]
 female_actors = [[female_leaders, 'Abbesses']  , [femaleagent, 'Agents for nunneries']]
 
+#Different lists of years 
 listnumber = np.arange(1100, 1300, 1)
 listdecaden = np.arange(1100, 1300, 10)
 listdecade = np.arange(110, 130, 1)
@@ -699,6 +697,8 @@ decades = []
 for y in listdecaden:
         year = f'{y}-01-01'
         decades.append(year)
+#this function returns the number of agents and leaders acting for a list of institutions (or a single institution) each year. 
+# Each query seeks the number for a year, which ensures that the number of agents and leaders acting refer to the same year
 def get_numeber_years (gender, institutions):
     number_query = '''
         SELECT COUNT(*) FROM alldocuments 
@@ -741,9 +741,11 @@ def get_numeber_years (gender, institutions):
 
     return agent_list, leader_list 
 
+#this function returns the results of a line regression statistic  
 def regression (first_list, second_list):
     return stats.linregress(first_list, second_list)
 
+#this plots a regression statistic, the first and second list come from the get_number_years query
 def regression_plot (first_list,second_list, title, numbertitle):
     res = regression(first_list,second_list)
     fig, ax = plt.subplots(figsize = (8,8))
@@ -756,7 +758,7 @@ def regression_plot (first_list,second_list, title, numbertitle):
     plt.savefig(f'{directoryToSaveGraphs}/{numbertitle}.jpeg')
     plt.close(fig)
 
-
+#this function returns the percentage of documents redacted with a leader or with an agent for each decade of the period
 def getPercentDecade (gender, institutions, listOfDecades):
     number_query = '''
         SELECT COUNT(*) FROM alldocuments 
@@ -783,16 +785,14 @@ def getPercentDecade (gender, institutions, listOfDecades):
     '''
     agent_list = []
     leader_list = []
-    actualdecates = []
+    actualdecades = []
     for year in listOfDecades:
         year = int(year)
         if getDecadeTotal(institutions, year) == 0:
-            #agent_list.append(0)
-            #leader_list.append(0)
             continue
         else:
             total = getDecadeTotal(institutions, year)
-            actualdecates.append(year)
+            actualdecades.append(year)
             
         if gender == 'm':
             dc.execute(query_without_abbot, [maleagent, institutions, male_leaders, institutions, year])
@@ -804,8 +804,9 @@ def getPercentDecade (gender, institutions, listOfDecades):
             agent_list.append(dc.fetchall()[0][0]/total)
             dc.execute(number_query, [female_leaders, institutions, year])
             leader_list.append(dc.fetchall()[0][0]/total)
-    return agent_list, leader_list, np.array(actualdecates) 
+    return agent_list, leader_list, np.array(actualdecades) 
 
+#this function gives the total number of document in a year, and is used in the getPercentDecade function
 def getDecadeTotal (inst, year):
     number_query = '''
         SELECT COUNT(*) FROM alldocuments 
